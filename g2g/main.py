@@ -33,6 +33,8 @@ def cli():
 @click.option('--output-file', default='repo_info.json', help='Output JSON file for repo information')
 @click.option('--clean-all', is_flag=True, help='Remove all existing repos before download')
 def download(api_url, token, group, output_file, clean_all):
+    logger.info("### Starting download")
+
     if not token:
         token = click.prompt('Please enter your GitLab Private Token', hide_input=True)
 
@@ -46,10 +48,15 @@ def download(api_url, token, group, output_file, clean_all):
     group_info = download_group_repos(api_url, group, token)
     timestamp = datetime.now().strftime('%Y%m%d')
     group_for_filename = group.replace("/", "_")
-    backup_file_name = f"migration_{group_for_filename}_{timestamp}.json"
 
+    if output_file:
+        backup_file_name = output_file
+    else:
+        backup_file_name = f"migration_{group_for_filename}_{timestamp}.json"
     with open(backup_file_name, 'w') as f:
         json.dump({"group_info": group_info}, f)
+
+    logger.info("### Finished download")
 
 @cli.command()
 @click.option('--api-url', help='The new GitLab API URL', required=True)
@@ -57,6 +64,8 @@ def download(api_url, token, group, output_file, clean_all):
 @click.option('--group', help='The GitLab group to upload to', required=False)
 @click.option('--input-file', default='repo_info.json', help='Input JSON file for repo information', required=False)
 def upload(api_url, token, group, input_file):
+    logger.info("### Starting upload")
+
     if not token:
         token = click.prompt('Please enter your GitLab Private Token for the new instance', hide_input=True)
 
@@ -69,13 +78,14 @@ def upload(api_url, token, group, input_file):
             repo_info = {}
             find_git_repos(group, repo_info)
             if repo_info:
-                logger.info(json.dumps(repo_info, indent=4))
+                logger.info("Found git repos: %s", json.dumps(repo_info, indent=4))
                 create_and_upload_to_new_instance(api_url, token, {"group_info": repo_info}, group)
             else:
                 logger.warn("No git repositories found in folder %s", group)
         else:
             logger.error("Either specify an input JSON file or ensure the specified group folder %s exists.", group)
 
+    logger.info("### Finished upload")
 
 if __name__ == '__main__':
     cli()
