@@ -161,3 +161,7 @@ cython_debug/
 
 migrations/*
 tests/local/*
+
+# mp
+g2g-dev
+.idea

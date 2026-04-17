@@ -1,9 +1,26 @@
+import http.client as http_client
+import logging
+import logging.config
+import json
+from pathlib import Path
+
+# http_client.HTTPConnection.debuglevel = 1
+
+def setup_logging():
+    with open('config/logging.json') as f:
+        config = json.load(f)
+    Path("logs").mkdir(exist_ok=True)
+    logging.config.dictConfig(config)
+
+setup_logging()
+
 import click
 import os
-import json
 from datetime import datetime
 import shutil
 from g2g.gitlab_utils import download_group_repos, create_and_upload_to_new_instance, find_git_repos
+
+logger = logging.getLogger(__name__)
 
 @click.group()
 def cli():
@@ -20,7 +37,7 @@ def download(api_url, token, group, output_file, clean_all):
         token = click.prompt('Please enter your GitLab Private Token', hide_input=True)
 
     if clean_all and os.path.exists(group):
-        print(f"Removing existing group directory: {group}")
+        logger.info("Removing existing group directory: %s", group)
         shutil.rmtree(group)
 
     if not os.path.exists(group):
@@ -52,12 +69,12 @@ def upload(api_url, token, group, input_file):
             repo_info = {}
             find_git_repos(group, repo_info)
             if repo_info:
-                print(json.dumps(repo_info, indent=4))
+                logger.info(json.dumps(repo_info, indent=4))
                 create_and_upload_to_new_instance(api_url, token, {"group_info": repo_info}, group)
             else:
-                print(f"No git repositories found in folder {group}.")
+                logger.warn("No git repositories found in folder %s", group)
         else:
-            print(f"Either specify an input JSON file or ensure the specified group folder {group} exists.")
+            logger.error("Either specify an input JSON file or ensure the specified group folder %s exists.", group)
 
 
 if __name__ == '__main__':
