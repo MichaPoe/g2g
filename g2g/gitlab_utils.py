@@ -154,6 +154,14 @@ def create_and_upload_to_new_instance(api_url, token, repo_info, group=None):
             new_repo_url = json.loads(response.text)['http_url_to_repo']
         else:
             logger.warn("Failed to create project %s. Trying to fetch existing one. Response: %s", repo_name, response.text)
+            # TODO fix searching project actually we should ...
+            # repo_path_parts: [0] -> group, [1..n-2] -> subgroups -> [n-1] -> project
+            #  - search for group: groups?search=<group-name> where [].name matches exactly -> get [].id which is parent_id
+            #  - search for subgroups relative to parent_id: groups/<parent_id>/subgroups where name matches exactly -> get [].id which is new parent_id
+            #    - repeat for all subgroups
+            #  - search project for subgroup: groups/<parent_id>/projects where name matches exactly -> get [].id which is project_id
+            #  - fetch project details: projects/<project_id> -> get .http_url_to_repo
+
             # Fetch the existing project URL
             existing_project_response = requests.get(f"{api_url}/projects/{urllib.parse.quote_plus(repo_name)}", headers={"Private-Token": token})
             if existing_project_response.status_code != 200:
