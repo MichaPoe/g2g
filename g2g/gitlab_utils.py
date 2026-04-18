@@ -203,21 +203,28 @@ def create_and_upload_to_new_instance(api_url: str, token: str, repo_info: dict,
             new_repo_url = json.loads(response.text)['http_url_to_repo']
         else:
             logger.warn("Failed to create project %s. Trying to fetch existing one. Response: %d - %s", repo_name, response.status_code, response.text)
-            # TODO fix searching project actually we should ...
-            # repo_path_parts: [0] -> group, [1..n-2] -> subgroups -> [n-1] -> project
-            #  - search for group: groups?search=<group-name> where [].name matches exactly -> get [].id which is parent_id
-            #  - search for subgroups relative to parent_id: groups/<parent_id>/subgroups where name matches exactly -> get [].id which is new parent_id
-            #    - repeat for all subgroups
-            #  - search project for subgroup: groups/<parent_id>/projects where name matches exactly -> get [].id which is project_id
-            #  - fetch project details: projects/<project_id> -> get .http_url_to_repo
 
-            # Fetch the existing project URL
-            existing_project_response = requests.get(f"{api_url}/projects/{urllib.parse.quote_plus(repo_name)}", headers={"Private-Token": token})
-            if existing_project_response.status_code != 200:
-                logger.error("Failed to get existing project %s. Response: %d - %s", repo_name, existing_project_response.status_code, existing_project_response.text)
+            projects_url = None
+            if parent_id:
+                projects_url = f"{api_url}/groups/{parent_id}/projects"
+            else:
+                projects_url = f"{api_url}/projects"
+            projects = perform_paged_get(projects_url, token)
+
+            if len(projects) <= 0:
+                logger.warn("Project %s not found for parent ID %s", repo_name, parent_id)
                 continue
-            new_repo_url = json.loads(existing_project_response.text)['http_url_to_repo']
-        
+
+            new_repo_url = None
+            for project in projects:
+                if project['name'] == repo_name:
+                    logger.debug("Found existing project %s for parent ID %s with id %s and url %s", repo_name, parent_id, project['id'], project['http_url_to_repo'])
+                    new_repo_url = project['http_url_to_repo']
+
+            if not new_repo_url:
+                logger.warn("Project %s not found for parent ID %s in %d projects", repo_name, parent_id, len(projects))
+                continue
+
         repo_path = repo_data['path']
         repo = Repo(repo_path)
 
