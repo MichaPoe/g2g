@@ -24,6 +24,26 @@ pip install g2g
 
 The primary commands for `g2g` are `download` and `upload`.
 
+**Syntax:**
+```
+g2g [download|upload] --api-url <url-to-gitlab> {additional-options ...}
+```
+
+Option `api-url` is mandatory and specifies the base URL to Gitlab API v4.
+
+#### Command download
+
+**Additional Options:**
+
+- `--token TEXT` The GitLab Private Token for CI/CD
+- `--group TEXT` Group to download
+- `--output-file` to specify the JSON file for saving repo information.
+- `--include TEXT` 
+- `--exclude TEXT` 
+- `--clean-all` to remove all existing repos before download.
+
+**Example:**
+
 ```bash
 g2g download --api-url "https://gitlab.com/api/v4" --group "mloops" --clean-all
 Please enter your GitLab Private Token: 
@@ -44,6 +64,16 @@ Cloning devops-while...
 Downloading subgroup devops-girl
 Cloning devops-hotel...
 ```
+
+#### Command upload
+
+**Additional Options:**
+
+- `--token TEXT` The GitLab Private Token for CI/CD
+- `--group TEXT` Group to download
+- `--input-file` to specify the JSON file for reading repo information.
+
+**Example:**
 
 ```bash
 g2g upload --api-url https://new.instance.localhost/api/v4 --group mloops
@@ -154,13 +184,6 @@ Group devops-card created or fetched with ID: 3295
 Creating new project: devops-Mr under parent ID: 3295
 Successfully created and pushed to https://new.instance.localhost/mloops/devops-card/devops-Mr.git
 ```
-
-### Additional Options:
-
-- `--token TEXT` The GitLab Private Token for CI/CD
-- `--output-file` to specify the JSON file for saving repo information.
-- `--input-file` to specify the JSON file for reading repo information.
-- `--clean-all` to remove all existing repos before download.
 
 ## Restrictions
 
