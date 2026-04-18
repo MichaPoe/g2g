@@ -34,7 +34,7 @@ def perform_paged_get(api_url: str, token: str, params: dict = None) -> list:
         response = requests.get(api_url, headers=auth_headers, params=all_params)
         logger.debug("Performed get %s on page %d returned %d", api_url, page, response.status_code)
         if response.status_code != 200:
-            logger.warn("Failed to perform get %s with params %s. Response: %s", api_url, all_params, response.text)
+            logger.warn("Failed to perform get %s with params %s. Response: %d - %s", api_url, all_params, response.status_code, response.text)
             break
 
         data = response.json()
@@ -52,20 +52,20 @@ def perform_paged_get(api_url: str, token: str, params: dict = None) -> list:
     logger.debug("Performed get %s on %d page(s) returning %d entries", api_url, page, len(results))
     return results
 
-def download_group_repos(api_url: str, token: str, group: str) -> dict:
+def download_group_repos(api_url: str, token: str, group_name: str) -> dict:
     """
     download_group_repos download all repositories of group
 
     :param api_url: url to target Gitlab API
     :param token: token for authentication
-    :param group: group to download repositories for
+    :param group_name: group to download repositories for
     :return: group info
     """
     group_info = {}
 
-    projects = perform_paged_get(f"{api_url}/groups/{urllib.parse.quote_plus(group)}/projects", token)
+    projects = perform_paged_get(f"{api_url}/groups/{urllib.parse.quote_plus(group_name)}/projects", token)
     if len(projects) <= 0:
-        logger.info("No projects for group %s", group)
+        logger.info("No projects for group %s", group_name)
         return group_info
 
     for project in projects:
@@ -78,27 +78,27 @@ def download_group_repos(api_url: str, token: str, group: str) -> dict:
 
         try:
             logger.info("Cloning all branches of %s", repo_name)
-            repo = Repo.clone_from(repo_url_with_token, f"{group}/{repo_name}", multi_options=['--mirror'], no_single_branch=True)
-            group_info[repo_name] = {"url": repo_url, "path": f"{group}/{repo_name}"}
+            repo = Repo.clone_from(repo_url_with_token, f"{group_name}/{repo_name}", multi_options=['--mirror'], no_single_branch=True)
+            group_info[repo_name] = {"url": repo_url, "path": f"{group_name}/{repo_name}"}
         except GitCommandError as e:
             logger.error("Failed to clone %s", repo_name, e)
 
-    download_subgroups(api_url, token, group, group_info)
+    download_subgroups(api_url, token, group_name, group_info)
 
     return group_info
 
-def download_subgroups(api_url: str, token: str, parent_group, group_info: dict):
+def download_subgroups(api_url: str, token: str, parent_group_name, group_info: dict):
     """
     download_subgroups download all repositories of subgroups and update group info
 
     :param api_url: url to target Gitlab API
     :param token: token for authentication
-    :param parent_group:
+    :param parent_group_name: parent group to download repositories for
     :param group_info: group info
     """
-    subgroups = perform_paged_get(f"{api_url}/groups/{urllib.parse.quote_plus(parent_group)}/subgroups", token)
+    subgroups = perform_paged_get(f"{api_url}/groups/{urllib.parse.quote_plus(parent_group_name)}/subgroups", token)
     if len(subgroups) <= 0:
-        logger.info("No subgroups for parent group %s", parent_group)
+        logger.info("No subgroups for parent group %s", parent_group_name)
         return
 
     for subgroup in subgroups:
@@ -157,25 +157,25 @@ def create_or_get_group(api_url, token, group_name, parent_id=None) -> str:
     if response.status_code == 201:
         return json.loads(response.text)['id']
     else:
-        logger.error("Failed to create group %s. Response: %s", group_name, response.text)
+        logger.error("Failed to create group %s. Response: %d - %s", group_name, response.status_code, response.text)
         return None
 
-def create_and_upload_to_new_instance(api_url: str, token: str, repo_info: dict, group: str=None):
+def create_and_upload_to_new_instance(api_url: str, token: str, repo_info: dict, group_name: str=None):
     """
     create_and_upload_to_new_instance create and upload project
 
     :param api_url: url to target Gitlab API
     :param token: token for authentication
     :param repo_info: repository information
-    :param group: optional target group prefix
+    :param group_name: optional target group prefix
     """
     for repo_name, repo_data in repo_info['group_info'].items():
         repo_path_parts = repo_data['path'].split("/")
         logger.info("Processing %s with path parts: %s", repo_name, repo_path_parts)
 
         # prefix by group if provided
-        if group:
-            group_parts = group.split("/")
+        if group_name:
+            group_parts = group_name.split("/")
             if all(x not in repo_path_parts for x in group_parts):
                 repo_path_parts = group_parts + repo_path_parts
             logger.info("Group specified. Updated path parts: %s", repo_path_parts)
@@ -202,7 +202,7 @@ def create_and_upload_to_new_instance(api_url: str, token: str, repo_info: dict,
         if response.status_code == 201:
             new_repo_url = json.loads(response.text)['http_url_to_repo']
         else:
-            logger.warn("Failed to create project %s. Trying to fetch existing one. Response: %s", repo_name, response.text)
+            logger.warn("Failed to create project %s. Trying to fetch existing one. Response: %d - %s", repo_name, response.status_code, response.text)
             # TODO fix searching project actually we should ...
             # repo_path_parts: [0] -> group, [1..n-2] -> subgroups -> [n-1] -> project
             #  - search for group: groups?search=<group-name> where [].name matches exactly -> get [].id which is parent_id
@@ -214,7 +214,7 @@ def create_and_upload_to_new_instance(api_url: str, token: str, repo_info: dict,
             # Fetch the existing project URL
             existing_project_response = requests.get(f"{api_url}/projects/{urllib.parse.quote_plus(repo_name)}", headers={"Private-Token": token})
             if existing_project_response.status_code != 200:
-                logger.error("Failed to get existing project %s. Response: %s", repo_name, existing_project_response.text)
+                logger.error("Failed to get existing project %s. Response: %d - %s", repo_name, existing_project_response.status_code, existing_project_response.text)
                 continue
             new_repo_url = json.loads(existing_project_response.text)['http_url_to_repo']
         
