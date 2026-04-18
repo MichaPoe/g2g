@@ -95,14 +95,22 @@ def download_group_repos(api_url: str, token: str, group_name: str, includes: li
     :param group_name: group to download repositories for
     :param includes: list of glob patterns of paths to projects or groups to include
     :param excludes: list of glob patterns of paths to projects or groups to exclude
-    :return: group info
+    :return: group and project info
     """
-    group_info = {}
+    group_and_project_info = { "projects": {}, "groups": {} }
+
+    group_info_url = f"{api_url}/groups/{urllib.parse.quote_plus(group_name)}?with_projects=false"
+    response = requests.get(group_info_url, headers={"Private-Token": token})
+    if response.status_code != 200:
+        logger.warn("Failed to perform get %s. Response: %d - %s", group_info_url, response.status_code, response.text)
+        return group_and_project_info
+    project = response.json()
+    group_and_project_info["groups"][group_name] = {"name": project["name"], "description": project["description"]}
 
     projects = perform_paged_get(f"{api_url}/groups/{urllib.parse.quote_plus(group_name)}/projects", token)
     if len(projects) <= 0:
         logger.info("No projects for group %s", group_name)
-        return group_info
+        return group_and_project_info
 
     for project in projects:
         path_with_namespace = project['path_with_namespace']
@@ -122,23 +130,25 @@ def download_group_repos(api_url: str, token: str, group_name: str, includes: li
 
         try:
             logger.info("Cloning all branches of %s", repo_name)
-            repo = Repo.clone_from(repo_url_with_token, f"{group_name}/{repo_name}", multi_options=['--mirror'], no_single_branch=True)
-            group_info[repo_name] = {"url": repo_url, "path": f"{group_name}/{repo_name}"}
+            repo_full_name = f"{group_name}/{repo_name}"
+            repo = Repo.clone_from(repo_url_with_token, repo_full_name, multi_options=['--mirror'], no_single_branch=True)
+            # TODO we do not need url in any place at all
+            group_and_project_info["projects"][repo_full_name] = {"name": repo_name, "url": repo_url}
         except GitCommandError as e:
             logger.error("Failed to clone %s", repo_name, e)
 
-    download_subgroups(api_url, token, group_name, group_info, includes, excludes)
+    download_subgroups(api_url, token, group_name, group_and_project_info, includes, excludes)
 
-    return group_info
+    return group_and_project_info
 
-def download_subgroups(api_url: str, token: str, parent_group_name, group_info: dict, includes: list, excludes: list):
+def download_subgroups(api_url: str, token: str, parent_group_name, group_and_project_info: dict, includes: list, excludes: list):
     """
     download_subgroups download all repositories of subgroups and update group info
 
     :param api_url: url to target Gitlab API
     :param token: token for authentication
     :param parent_group_name: parent group to download repositories for
-    :param group_info: group info
+    :param group_and_project_info: group and project info
     :param includes: list of glob patterns of paths to projects or groups to include
     :param excludes: list of glob patterns of paths to projects or groups to exclude
     """
@@ -154,7 +164,8 @@ def download_subgroups(api_url: str, token: str, parent_group_name, group_info: 
 
         subgroup_info = download_group_repos(api_url, token, subgroup_path, includes, excludes)
 
-        group_info.update(subgroup_info)
+        group_and_project_info["projects"].update(subgroup_info["projects"])
+        group_and_project_info["groups"].update(subgroup_info["groups"])
 
     # TODO perform subgroups of subgroups in case of nested subgroups
 

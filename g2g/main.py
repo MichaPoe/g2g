@@ -57,8 +57,8 @@ def download(api_url: str, token: str, group: str, output_file: str, include: st
     excludes = stripped_values_of(exclude)
 
     with open(backup_file_name, 'w') as f:
-        group_info = download_group_repos(api_url, token, group, includes, excludes)
-        json.dump({"group_info": group_info}, f)
+        group_and_project_info = download_group_repos(api_url, token, group, includes, excludes)
+        json.dump(group_and_project_info, f)
 
     logger.info("### Finished download")
 
