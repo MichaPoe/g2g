@@ -2,6 +2,7 @@ import requests
 import json
 import urllib.parse
 import os
+import fnmatch
 import logging
 from git import Repo, RemoteProgress
 from git.exc import InvalidGitRepositoryError
@@ -52,13 +53,48 @@ def perform_paged_get(api_url: str, token: str, params: dict = None) -> list:
     logger.debug("Performed get %s on %d page(s) returning %d entries", api_url, page, len(results))
     return results
 
-def download_group_repos(api_url: str, token: str, group_name: str) -> dict:
+def stripped_values_of(values: str) -> list:
+    return [pattern.strip() for pattern in values.split(',')] if values else None
+
+def should_process(path_with_namespace: str, includes: list, excludes: list) -> bool:
     """
-    download_group_repos download all repositories of group
+    should_process checks whether project given by its full path should be processed due to given optional includes and excludes
+
+    :param path_with_namespace: full path to project
+    :param includes: list of glob patterns of paths to projects or groups to include
+    :param excludes: list of glob patterns of paths to projects or groups to exclude
+    :return: flag indicating whether project should be processed or not
+    """
+
+    if excludes:
+        exclude_matches = any(fnmatch.fnmatch(path_with_namespace, pattern) for pattern in excludes)
+        if exclude_matches:
+            logger.debug("exclude matches path %s - NOT processing", path_with_namespace)
+            return False
+
+    if includes:
+        include_matches = any(fnmatch.fnmatch(path_with_namespace, pattern) for pattern in includes)
+        if not include_matches:
+            logger.debug("include do not matches path %s - NOT processing", path_with_namespace)
+            return False
+        else:
+            logger.debug("include matches path %s - processing", path_with_namespace)
+            return True
+
+    logger.debug("no includes and no excludes provided to match path %s - processing", path_with_namespace)
+    return True
+
+def download_group_repos(api_url: str, token: str, group_name: str, includes: list, excludes: list) -> dict:
+    """
+    download_group_repos download all repositories of group matching optional includes or/and excludes
+    If neither includes nor excludes are provided all repositories will be downloaded.
+    If an include and an exclude matches, exclude wins.
 
     :param api_url: url to target Gitlab API
     :param token: token for authentication
     :param group_name: group to download repositories for
+    :param includes: list of glob patterns of paths to projects or groups to include
+    :param excludes: list of glob patterns of paths to projects or groups to exclude
     :return: group info
     """
     group_info = {}
@@ -69,6 +105,14 @@ def download_group_repos(api_url: str, token: str, group_name: str) -> dict:
         return group_info
 
     for project in projects:
+        path_with_namespace = project['path_with_namespace']
+        if not should_process(path_with_namespace, includes, excludes):
+            logger.info("Skipping project %s", path_with_namespace)
+            continue
+
+        # make group directory
+        os.makedirs(group_name, exist_ok=True)
+
         repo_url = project['http_url_to_repo']
         repo_name = project['name']
 
@@ -83,11 +127,11 @@ def download_group_repos(api_url: str, token: str, group_name: str) -> dict:
         except GitCommandError as e:
             logger.error("Failed to clone %s", repo_name, e)
 
-    download_subgroups(api_url, token, group_name, group_info)
+    download_subgroups(api_url, token, group_name, group_info, includes, excludes)
 
     return group_info
 
-def download_subgroups(api_url: str, token: str, parent_group_name, group_info: dict):
+def download_subgroups(api_url: str, token: str, parent_group_name, group_info: dict, includes: list, excludes: list):
     """
     download_subgroups download all repositories of subgroups and update group info
 
@@ -95,6 +139,8 @@ def download_subgroups(api_url: str, token: str, parent_group_name, group_info: 
     :param token: token for authentication
     :param parent_group_name: parent group to download repositories for
     :param group_info: group info
+    :param includes: list of glob patterns of paths to projects or groups to include
+    :param excludes: list of glob patterns of paths to projects or groups to exclude
     """
     subgroups = perform_paged_get(f"{api_url}/groups/{urllib.parse.quote_plus(parent_group_name)}/subgroups", token)
     if len(subgroups) <= 0:
@@ -106,8 +152,7 @@ def download_subgroups(api_url: str, token: str, parent_group_name, group_info: 
         subgroup_path = subgroup['full_path']
         logger.info("Downloading subgroup %s", subgroup_name)
 
-        os.makedirs(subgroup_path, exist_ok=True)
-        subgroup_info = download_group_repos(api_url, token, subgroup_path)
+        subgroup_info = download_group_repos(api_url, token, subgroup_path, includes, excludes)
 
         group_info.update(subgroup_info)
 

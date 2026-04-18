@@ -1,4 +1,3 @@
-import http.client as http_client
 import logging
 import logging.config
 import json
@@ -18,7 +17,7 @@ import click
 import os
 from datetime import datetime
 import shutil
-from g2g.gitlab_utils import download_group_repos, create_and_upload_to_new_instance, find_git_repos
+from g2g.gitlab_utils import download_group_repos, create_and_upload_to_new_instance, find_git_repos, stripped_values_of
 
 logger = logging.getLogger(__name__)
 
@@ -31,8 +30,10 @@ def cli():
 @click.option('--token', help='The GitLab Private Token', required=False)
 @click.option('--group', help='The GitLab group to download', required=True)
 @click.option('--output-file', default='repo_info.json', help='Output JSON file for repo information')
+@click.option('--include', help='comma delimited list of glob patterns of paths to projects or groups to include', required=False)
+@click.option('--exclude', help='comma delimited list of glob patterns of paths to projects or groups to exclude', required=False)
 @click.option('--clean-all', is_flag=True, help='Remove all existing repos before download')
-def download(api_url: str, token: str, group: str, output_file: str, clean_all: bool):
+def download(api_url: str, token: str, group: str, output_file: str, include: str, exclude: str, clean_all: bool):
     logger.info("### Starting download")
 
     if not token:
@@ -52,11 +53,15 @@ def download(api_url: str, token: str, group: str, output_file: str, clean_all: 
         group_for_filename = group.replace("/", "_")
         backup_file_name = f"migration_{group_for_filename}_{timestamp}.json"
 
+    includes = stripped_values_of(include)
+    excludes = stripped_values_of(exclude)
+
     with open(backup_file_name, 'w') as f:
-        group_info = download_group_repos(api_url, token, group)
+        group_info = download_group_repos(api_url, token, group, includes, excludes)
         json.dump({"group_info": group_info}, f)
 
     logger.info("### Finished download")
+
 
 @cli.command()
 @click.option('--api-url', help='The new GitLab API URL', required=True)
