@@ -162,6 +162,11 @@ Successfully created and pushed to https://new.instance.localhost/mloops/devops-
 - `--input-file` to specify the JSON file for reading repo information.
 - `--clean-all` to remove all existing repos before download.
 
+## Restrictions
+
+- Nested Subgroups are not processed
+- Name of Groups, Subgroups and Projects are not handled
+
 ## Contributing
 
 All contributions are welcome! Please refer to the [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
