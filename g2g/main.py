@@ -32,7 +32,7 @@ def cli():
 @click.option('--group', help='The GitLab group to download', required=True)
 @click.option('--output-file', default='repo_info.json', help='Output JSON file for repo information')
 @click.option('--clean-all', is_flag=True, help='Remove all existing repos before download')
-def download(api_url, token, group, output_file, clean_all):
+def download(api_url: str, token: str, group: str, output_file: str, clean_all: bool):
     logger.info("### Starting download")
 
     if not token:
@@ -45,15 +45,15 @@ def download(api_url, token, group, output_file, clean_all):
     if not os.path.exists(group):
         os.makedirs(group)
 
-    group_info = download_group_repos(api_url, group, token)
-    timestamp = datetime.now().strftime('%Y%m%d')
-    group_for_filename = group.replace("/", "_")
-
     if output_file:
         backup_file_name = output_file
     else:
+        timestamp = datetime.now().strftime('%Y%m%d')
+        group_for_filename = group.replace("/", "_")
         backup_file_name = f"migration_{group_for_filename}_{timestamp}.json"
+
     with open(backup_file_name, 'w') as f:
+        group_info = download_group_repos(api_url, token, group)
         json.dump({"group_info": group_info}, f)
 
     logger.info("### Finished download")
@@ -63,7 +63,7 @@ def download(api_url, token, group, output_file, clean_all):
 @click.option('--token', help='The GitLab Private Token for the new instance', required=False)
 @click.option('--group', help='The GitLab group to upload to', required=False)
 @click.option('--input-file', default='repo_info.json', help='Input JSON file for repo information', required=False)
-def upload(api_url, token, group, input_file):
+def upload(api_url: str, token: str, group: str, input_file: str):
     logger.info("### Starting upload")
 
     if not token:

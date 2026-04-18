@@ -13,7 +13,15 @@ class MyProgressPrinter(RemoteProgress):
     def update(self, op_code, cur_count, max_count=None, message=''):
         print(self._cur_line)
 
-def perform_paged_get(url: str, token: str, params: dict = None) -> list:
+def perform_paged_get(api_url: str, token: str, params: dict = None) -> list:
+    """
+    perform_paged_get
+
+    :param api_url: url to target Gitlab API
+    :param token: token for authentication
+    :param params: optional request parameters
+    :return:
+    """
     auth_headers={"Private-Token": token}
     page_size=100
     results=[]
@@ -23,10 +31,10 @@ def perform_paged_get(url: str, token: str, params: dict = None) -> list:
         if params:
             all_params.update(params)
 
-        response = requests.get(url, headers=auth_headers, params=all_params)
-        logger.debug("Performed get %s on page %d returned %d", url, page, response.status_code)
+        response = requests.get(api_url, headers=auth_headers, params=all_params)
+        logger.debug("Performed get %s on page %d returned %d", api_url, page, response.status_code)
         if response.status_code != 200:
-            logger.warn("Failed to perform get %s with params %s. Response: %s", url, all_params, response.text)
+            logger.warn("Failed to perform get %s with params %s. Response: %s", api_url, all_params, response.text)
             break
 
         data = response.json()
@@ -41,10 +49,18 @@ def perform_paged_get(url: str, token: str, params: dict = None) -> list:
 
         page += 1
 
-    logger.debug("Performed get %s on %d page(s) returning %d entries", url, page, len(results))
+    logger.debug("Performed get %s on %d page(s) returning %d entries", api_url, page, len(results))
     return results
 
-def download_group_repos(api_url, group, token):
+def download_group_repos(api_url: str, token: str, group: str) -> dict:
+    """
+    download_group_repos download all repositories of group
+
+    :param api_url: url to target Gitlab API
+    :param token: token for authentication
+    :param group: group to download repositories for
+    :return: group info
+    """
     group_info = {}
 
     projects = perform_paged_get(f"{api_url}/groups/{urllib.parse.quote_plus(group)}/projects", token)
@@ -67,11 +83,19 @@ def download_group_repos(api_url, group, token):
         except GitCommandError as e:
             logger.error("Failed to clone %s", repo_name, e)
 
-    download_subgroups(api_url, group, token, group_info)
+    download_subgroups(api_url, token, group, group_info)
 
     return group_info
 
-def download_subgroups(api_url, parent_group, token, group_info):
+def download_subgroups(api_url: str, token: str, parent_group, group_info: dict):
+    """
+    download_subgroups download all repositories of subgroups and update group info
+
+    :param api_url: url to target Gitlab API
+    :param token: token for authentication
+    :param parent_group:
+    :param group_info: group info
+    """
     subgroups = perform_paged_get(f"{api_url}/groups/{urllib.parse.quote_plus(parent_group)}/subgroups", token)
     if len(subgroups) <= 0:
         logger.info("No subgroups for parent group %s", parent_group)
@@ -83,15 +107,28 @@ def download_subgroups(api_url, parent_group, token, group_info):
         logger.info("Downloading subgroup %s", subgroup_name)
 
         os.makedirs(subgroup_path, exist_ok=True)
-        subgroup_info = download_group_repos(api_url, subgroup_path, token)
+        subgroup_info = download_group_repos(api_url, token, subgroup_path)
 
         group_info.update(subgroup_info)
 
-def create_or_get_group(api_url, token, group_name, parent_id=None):
+    # TODO perform subgroups of subgroups in case of nested subgroups
+
+def create_or_get_group(api_url, token, group_name, parent_id=None) -> str:
+    """
+    create_or_get_group ensures group exists in target
+
+    :param api_url: url to target Gitlab API
+    :param token: token for authentication
+    :param group_name: name of group to ensure
+    :param parent_id: optional id of parent group where group belongs
+    :return: id of ensured group
+    """
     params = {}
     if parent_id:
         params['parent_id'] = parent_id
 
+    # Check for existence as root group
+    # TODO params should not be needed
     groups = perform_paged_get(f"{api_url}/groups", token, params)
     for group in groups:
         if group['name'] == group_name:
@@ -110,6 +147,7 @@ def create_or_get_group(api_url, token, group_name, parent_id=None):
         found_subgroup_names = [subgroup['name'] for subgroup in subgroups]
         logger.debug("Could not find existing subgroup %s for parent ID %s with id %d - returned subgroup names %s", group_name, parent_id, len(found_subgroup_names), found_subgroup_names)
 
+    # Create missing group
     sanitized_group_name = group_name.replace(" ", "_").replace("-", "_").lower()
     payload = {"name": group_name, "path": sanitized_group_name}
     if parent_id:
@@ -122,17 +160,27 @@ def create_or_get_group(api_url, token, group_name, parent_id=None):
         logger.error("Failed to create group %s. Response: %s", group_name, response.text)
         return None
 
-def create_and_upload_to_new_instance(api_url, token, repo_info, group=None):
+def create_and_upload_to_new_instance(api_url: str, token: str, repo_info: dict, group: str=None):
+    """
+    create_and_upload_to_new_instance create and upload project
+
+    :param api_url: url to target Gitlab API
+    :param token: token for authentication
+    :param repo_info: repository information
+    :param group: optional target group prefix
+    """
     for repo_name, repo_data in repo_info['group_info'].items():
         repo_path_parts = repo_data['path'].split("/")
         logger.info("Processing %s with path parts: %s", repo_name, repo_path_parts)
 
+        # prefix by group if provided
         if group:
             group_parts = group.split("/")
             if all(x not in repo_path_parts for x in group_parts):
                 repo_path_parts = group_parts + repo_path_parts
             logger.info("Group specified. Updated path parts: %s", repo_path_parts)
 
+        # create groups and subgroups
         parent_id = None
         for part in repo_path_parts[:-1]:
             logger.info("Creating or getting group: %s", part)
@@ -141,6 +189,7 @@ def create_and_upload_to_new_instance(api_url, token, repo_info, group=None):
                 return
             logger.info("Group %s created or fetched with ID: %s", part, parent_id)
 
+        # ensure project
         sanitized_repo_name = repo_name.replace(" ", "_").replace("-", "_").lower()
         payload = {"name": repo_name, "path": sanitized_repo_name}
         
@@ -172,8 +221,9 @@ def create_and_upload_to_new_instance(api_url, token, repo_info, group=None):
         repo_path = repo_data['path']
         repo = Repo(repo_path)
 
+        # upload project
 
-        # Construct new remote URL with the token
+        # Construct new remote URL with the authentication token
         new_repo_url_parts = list(urllib.parse.urlsplit(new_repo_url))
         new_repo_url_parts[1] = f"oauth2:{token}@{urllib.parse.urlsplit(new_repo_url).netloc}"
         new_repo_url_with_token = urllib.parse.urlunsplit(new_repo_url_parts)
@@ -182,17 +232,16 @@ def create_and_upload_to_new_instance(api_url, token, repo_info, group=None):
         new_remote_name = "new-origin"
         repo.create_remote(new_remote_name, url=new_repo_url_with_token)
 
-        # Configurer le suivi des branches pour le nouveau remote
+        # Configure branch tracking for the new remote
         for branch in repo.branches:
-            # Configurer chaque branche locale pour suivre la même branche sur le nouveau remote
-            branch_name = branch.name
+            # Configure each local branch to follow the same branch on the new remote
             try:
-                branch.set_tracking_branch(repo.remotes[new_remote_name].refs[branch_name])
-                logger.info("Branch %s set to track %s/%s", branch_name, new_remote_name, branch_name)
+                branch.set_tracking_branch(repo.remotes[new_remote_name].refs[branch.name])
+                logger.info("Branch %s set to track %s/%s", branch.name, new_remote_name, branch.name)
             except IndexError:
-                logger.warn("Remote branch %s/%s does not exist.", new_remote_name, branch_name)
+                logger.warn("Remote branch %s/%s does not exist.", new_remote_name, branch.name)
 
-        # Pousser toutes les branches et tags au nouveau remote
+        # Push all branches and tags to the new remote
         try:
             logger.info("Pushing all branches and tags of %s to %s", repo_name, new_repo_url_with_token)
             repo.git.push(new_remote_name, '--all')
@@ -204,7 +253,13 @@ def create_and_upload_to_new_instance(api_url, token, repo_info, group=None):
         # Delete new remote
         repo.delete_remote(new_remote_name)
 
-def find_git_repos(path, repo_info):
+def find_git_repos(path: str, repo_info: dict):
+    """
+    find_git_repos updates repo_info with found repositories under path
+
+    :param path: path to search for git repositories
+    :param repo_info: repository information found so far - will be updated
+    """
     for folder in os.listdir(path):
         folder_path = os.path.join(path, folder)
         if os.path.isdir(folder_path):
