@@ -33,7 +33,7 @@ def perform_paged_get(api_url: str, token: str, params: dict = None) -> list:
             all_params.update(params)
 
         response = requests.get(api_url, headers=auth_headers, params=all_params)
-        logger.debug("Performed get %s on page %d returned %d", api_url, page, response.status_code)
+        logger.debug("Performed get %s with params %s on page %d returned %d", api_url, all_params, page, response.status_code)
         if response.status_code != 200:
             logger.warn("Failed to perform get %s with params %s. Response: %d - %s", api_url, all_params, response.status_code, response.text)
             break
@@ -50,7 +50,7 @@ def perform_paged_get(api_url: str, token: str, params: dict = None) -> list:
 
         page += 1
 
-    logger.debug("Performed get %s on %d page(s) returning %d entries", api_url, page, len(results))
+    logger.debug("Performed get %s with params %s on %d page(s) returning %d entries", api_url, params, page, len(results))
     return results
 
 def stripped_values_of(values: str) -> list:
@@ -173,11 +173,9 @@ def create_or_get_group(api_url, token, group_name, parent_id=None) -> str:
     :return: id of ensured group
     """
     params = {}
-    if parent_id:
-        params['parent_id'] = parent_id
+    params['active'] = "true"
 
     # Check for existence as root group
-    # TODO params should not be needed
     groups = perform_paged_get(f"{api_url}/groups", token, params)
     for group in groups:
         if group['name'] == group_name:
@@ -188,7 +186,7 @@ def create_or_get_group(api_url, token, group_name, parent_id=None) -> str:
 
     # Check for existence under the parent group, if parent_id is given
     if parent_id:
-        subgroups = perform_paged_get(f"{api_url}/groups/{parent_id}/subgroups", token)
+        subgroups = perform_paged_get(f"{api_url}/groups/{parent_id}/subgroups", token, params)
         for subgroup in subgroups:
             if subgroup['name'] == group_name:
                 logger.debug("Found existing subgroup %s for parent ID %s with id %s", group_name, parent_id, subgroup['id'])
