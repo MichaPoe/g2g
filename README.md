@@ -70,7 +70,7 @@ Cloning devops-hotel...
 **Additional Options:**
 
 - `--token TEXT` The GitLab Private Token for CI/CD
-- `--group TEXT` Group to download
+- `--group TEXT` Group to upload to
 - `--input-file` to specify the JSON file for reading repo information.
 
 **Example:**

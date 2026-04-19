@@ -123,7 +123,6 @@ def download_group_repos(api_url: str, token: str, group_name: str, includes: li
 
         repo_url = project['http_url_to_repo']
         repo_name = project['name']
-
         repo_url_parts = list(urllib.parse.urlsplit(repo_url))
         repo_url_parts[1] = f"oauth2:{token}@{urllib.parse.urlsplit(repo_url).netloc}"
         repo_url_with_token = urllib.parse.urlunsplit(repo_url_parts)
@@ -133,7 +132,7 @@ def download_group_repos(api_url: str, token: str, group_name: str, includes: li
             repo_full_name = f"{group_name}/{repo_name}"
             repo = Repo.clone_from(repo_url_with_token, repo_full_name, multi_options=['--mirror'], no_single_branch=True)
             # TODO we do not need url in any place at all
-            group_and_project_info["projects"][repo_full_name] = {"name": repo_name, "url": repo_url}
+            group_and_project_info["projects"][repo_full_name] = {"name": repo_name, "description": (project['description']), "url": repo_url}
         except GitCommandError as e:
             logger.error("Failed to clone %s", repo_name, e)
 
@@ -141,7 +140,7 @@ def download_group_repos(api_url: str, token: str, group_name: str, includes: li
 
     return group_and_project_info
 
-def download_subgroups(api_url: str, token: str, parent_group_name, group_and_project_info: dict, includes: list, excludes: list):
+def download_subgroups(api_url: str, token: str, parent_group_name: str, group_and_project_info: dict, includes: list, excludes: list):
     """
     download_subgroups download all repositories of subgroups and update group info
 
@@ -169,7 +168,7 @@ def download_subgroups(api_url: str, token: str, parent_group_name, group_and_pr
 
     # TODO perform subgroups of subgroups in case of nested subgroups
 
-def create_or_get_group(api_url, token, group_name, parent_id=None) -> str:
+def create_or_get_group(api_url: str, token: str, group_name: str, parent_id:str = None, sanitized_group_name:str = None, group_description:str = None) -> str:
     """
     create_or_get_group ensures group exists in target
 
@@ -177,6 +176,8 @@ def create_or_get_group(api_url, token, group_name, parent_id=None) -> str:
     :param token: token for authentication
     :param group_name: name of group to ensure
     :param parent_id: optional id of parent group where group belongs
+    :param sanitized_group_name: optional sanitized group name
+    :param group_description: optional description of group
     :return: id of ensured group
     """
     params = {}
@@ -187,25 +188,29 @@ def create_or_get_group(api_url, token, group_name, parent_id=None) -> str:
     # TODO params should not be needed
     groups = perform_paged_get(f"{api_url}/groups", token, params)
     for group in groups:
-        if group['name'] == group_name:
+        if group['path'] == group_name:
             logger.debug("Found existing group %s for parent ID %s with id %s", group_name, parent_id, group['id'])
             return group['id']
     found_group_names = [group['name'] for group in groups]
-    logger.debug("Could not find existing group %s for parent ID %s in %d - returned group names %s", group_name, parent_id, len(found_group_names), found_group_names)
+    logger.debug("Could not find existing group %s for parent ID %s in %d returned group names %s", group_name, parent_id, len(found_group_names), found_group_names)
 
     # Check for existence under the parent group, if parent_id is given
     if parent_id:
         subgroups = perform_paged_get(f"{api_url}/groups/{parent_id}/subgroups", token)
         for subgroup in subgroups:
-            if subgroup['name'] == group_name:
+            if subgroup['path'] == group_name:
                 logger.debug("Found existing subgroup %s for parent ID %s with id %s", group_name, parent_id, subgroup['id'])
                 return subgroup['id']
         found_subgroup_names = [subgroup['name'] for subgroup in subgroups]
-        logger.debug("Could not find existing subgroup %s for parent ID %s with id %d - returned subgroup names %s", group_name, parent_id, len(found_subgroup_names), found_subgroup_names)
+        logger.debug("Could not find existing subgroup %s for parent ID %s in %d returned subgroup names %s", group_name, parent_id, len(found_subgroup_names), found_subgroup_names)
 
     # Create missing group
-    sanitized_group_name = group_name.replace(" ", "_").replace("-", "_").lower()
-    payload = {"name": group_name, "path": sanitized_group_name}
+
+    sanitized_group_path = group_name.replace(" ", "_").replace("-", "_").lower()
+    used_sanitized_group_name = sanitized_group_name if sanitized_group_name else sanitized_group_path
+    payload = {"name": used_sanitized_group_name, "path": sanitized_group_path} # description
+    if group_description:
+        payload['description'] = group_description
     if parent_id:
         payload['parent_id'] = parent_id
 
@@ -216,31 +221,45 @@ def create_or_get_group(api_url, token, group_name, parent_id=None) -> str:
         logger.error("Failed to create group %s. Response: %d - %s", group_name, response.status_code, response.text)
         return None
 
-def create_and_upload_to_new_instance(api_url: str, token: str, repo_info: dict, group_name: str=None):
+def create_and_upload_to_new_instance(api_url: str, token: str, group_and_project_info: dict, group_name: str=None):
     """
     create_and_upload_to_new_instance create and upload project
 
     :param api_url: url to target Gitlab API
     :param token: token for authentication
-    :param repo_info: repository information
+    :param group_and_project_info: group and project information where groups are optional and projects mandatory
     :param group_name: optional target group prefix
     """
-    for repo_name, repo_data in repo_info['group_info'].items():
-        repo_path_parts = repo_data['path'].split("/")
+    for repo_path, repo_data in group_and_project_info['projects'].items():
+        repo_name = repo_data["name"]
+        repo_path_parts = repo_path.split("/")
         logger.info("Processing %s with path parts: %s", repo_name, repo_path_parts)
 
-        # prefix by group if provided
+        parent_id = None
+
+        # if group_name is provided, then create groups and subgroups from group_name
         if group_name:
             group_parts = group_name.split("/")
             if all(x not in repo_path_parts for x in group_parts):
-                repo_path_parts = group_parts + repo_path_parts
-            logger.info("Group specified. Updated path parts: %s", repo_path_parts)
+                # no element in group_parts is in repo_path_parts
+                for group_part in group_parts:
+                    parent_id = create_or_get_group(api_url, token, group_part, parent_id)
+                    if parent_id is None:
+                        return
+                logger.info("Group specified. Created groups: %s", group_parts)
 
-        # create groups and subgroups
-        parent_id = None
+        # create groups and subgroups from repo_path
+        full_group_path_parts = []
         for part in repo_path_parts[:-1]:
-            logger.info("Creating or getting group: %s", part)
-            parent_id = create_or_get_group(api_url, token, part, parent_id)
+            full_group_path_parts.append(part)
+            current_group_path = "/".join(full_group_path_parts)
+            logger.info("Creating or getting group: %s using full path %s", part, current_group_path)
+
+            current_group_info = group_and_project_info["groups"].get(current_group_path)
+            current_group_name = current_group_info.get("name") if current_group_info else None
+            current_group_description = current_group_info.get("description") if current_group_info else None
+
+            parent_id = create_or_get_group(api_url, token, part, parent_id, current_group_name, current_group_description)
             if parent_id is None:
                 return
             logger.info("Group %s created or fetched with ID: %s", part, parent_id)
@@ -281,7 +300,6 @@ def create_and_upload_to_new_instance(api_url: str, token: str, repo_info: dict,
                 logger.warn("Project %s not found for parent ID %s in %d projects", repo_name, parent_id, len(projects))
                 continue
 
-        repo_path = repo_data['path']
         repo = Repo(repo_path)
 
         # upload project
@@ -316,12 +334,12 @@ def create_and_upload_to_new_instance(api_url: str, token: str, repo_info: dict,
         # Delete new remote
         repo.delete_remote(new_remote_name)
 
-def find_git_repos(path: str, repo_info: dict):
+def find_git_repos(path: str, group_and_project_info: dict):
     """
     find_git_repos updates repo_info with found repositories under path
 
     :param path: path to search for git repositories
-    :param repo_info: repository information found so far - will be updated
+    :param group_and_project_info: group and project info found so far - will be updated
     """
     for folder in os.listdir(path):
         folder_path = os.path.join(path, folder)
@@ -330,9 +348,9 @@ def find_git_repos(path: str, repo_info: dict):
                 repo = Repo(folder_path)
                 if repo.git_dir:
                     branches = [branch.name for branch in repo.branches]
-                    repo_info[folder] = {
+                    group_and_project_info["projects"][folder] = {
                         "path": folder_path,
                         "branches": branches
                     }
             except InvalidGitRepositoryError:
-                find_git_repos(folder_path, repo_info)
+                find_git_repos(folder_path, group_and_project_info)

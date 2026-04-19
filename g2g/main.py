@@ -76,15 +76,15 @@ def upload(api_url: str, token: str, group: str, input_file: str):
 
     if input_file and os.path.exists(input_file):
         with open(input_file, 'r') as f:
-            repo_info = json.load(f)
-        create_and_upload_to_new_instance(api_url, token, repo_info, group)
+            group_and_project_info = json.load(f)
+        create_and_upload_to_new_instance(api_url, token, group_and_project_info, group)
     else:
         if group and os.path.exists(group):
-            repo_info = {}
-            find_git_repos(group, repo_info)
-            if repo_info:
-                logger.info("Found git repos: %s", json.dumps(repo_info, indent=4))
-                create_and_upload_to_new_instance(api_url, token, {"group_info": repo_info}, group)
+            group_and_project_info = { "projects": {}, "groups": {} }
+            find_git_repos(group, group_and_project_info)
+            if group_and_project_info["projects"]:
+                logger.info("Found git repos: %s", json.dumps(group_and_project_info, indent=4))
+                create_and_upload_to_new_instance(api_url, token, group_and_project_info, group)
             else:
                 logger.warn("No git repositories found in folder %s", group)
         else:
