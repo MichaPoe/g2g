@@ -106,13 +106,14 @@ def download_group_repos(api_url: str, token: str, group_name: str, includes: li
     projects = perform_paged_get(f"{api_url}/groups/{urllib.parse.quote_plus(group_name)}/projects", token)
     if len(projects) <= 0:
         logger.info("No projects for group %s", group_name)
-        return group_info
 
     for project in projects:
         path_with_namespace = project['path_with_namespace']
         if not should_process(path_with_namespace, includes, excludes):
             logger.info("Skipping project %s", path_with_namespace)
             continue
+
+        logger.info("Downloading project %s", path_with_namespace)
 
         # make group directory
         os.makedirs(group_name, exist_ok=True)
