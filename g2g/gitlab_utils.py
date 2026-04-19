@@ -66,6 +66,10 @@ def should_process(path_with_namespace: str, includes: list, excludes: list) -> 
     :return: flag indicating whether project should be processed or not
     """
 
+    if not excludes and not includes:
+        logger.debug("no includes and no excludes provided to match path %s - processing", path_with_namespace)
+        return True
+
     if excludes:
         exclude_matches = any(fnmatch.fnmatch(path_with_namespace, pattern) for pattern in excludes)
         if exclude_matches:
@@ -80,9 +84,6 @@ def should_process(path_with_namespace: str, includes: list, excludes: list) -> 
         else:
             logger.debug("include matches path %s - processing", path_with_namespace)
             return True
-
-    logger.debug("no includes and no excludes provided to match path %s - processing", path_with_namespace)
-    return True
 
 def download_group_repos(api_url: str, token: str, group_name: str, includes: list, excludes: list) -> dict:
     """

@@ -34,7 +34,15 @@ def cli():
 @click.option('--exclude', help='comma delimited list of glob patterns of paths to projects or groups to exclude', required=False)
 @click.option('--clean-all', is_flag=True, help='Remove all existing repos before download')
 def download(api_url: str, token: str, group: str, output_file: str, include: str, exclude: str, clean_all: bool):
-    logger.info("### Starting download")
+    logger.info("### Starting download with arguments:")
+    logger.info("    api_url:       %s", api_url)
+    logger.info("    token:         %s", token is not None)
+    logger.info("    group:         %s", group)
+    logger.info("    output_file:   %s", output_file)
+    logger.info("    include:       %s", include)
+    logger.info("    exclude:       %s", exclude)
+    logger.info("    clean_all:     %s", clean_all)
+    logger.info("###")
 
     if not token:
         token = click.prompt('Please enter your GitLab Private Token', hide_input=True)
@@ -69,7 +77,12 @@ def download(api_url: str, token: str, group: str, output_file: str, include: st
 @click.option('--group', help='The GitLab group to upload to', required=False)
 @click.option('--input-file', default='repo_info.json', help='Input JSON file for repo information', required=False)
 def upload(api_url: str, token: str, group: str, input_file: str):
-    logger.info("### Starting upload")
+    logger.info("### Starting upload with arguments:")
+    logger.info("    api_url:       %s", api_url)
+    logger.info("    token:         %s", token is not None)
+    logger.info("    group:         %s", group)
+    logger.info("    input_file:    %s", input_file)
+    logger.info("###")
 
     if not token:
         token = click.prompt('Please enter your GitLab Private Token for the new instance', hide_input=True)
