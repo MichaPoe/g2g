@@ -85,6 +85,9 @@ def should_process(path_with_namespace: str, includes: list, excludes: list) -> 
             logger.debug("include matches path %s - processing", path_with_namespace)
             return True
 
+    logger.debug("excludes not provided or no match, includes not provided - processing")
+    return True
+
 def download_group_repos(api_url: str, token: str, group_name: str, includes: list, excludes: list) -> dict:
     """
     download_group_repos download all repositories of group matching optional includes or/and excludes
