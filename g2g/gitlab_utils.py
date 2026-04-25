@@ -129,8 +129,8 @@ def download_group_repos(api_url: str, token: str, group_name: str, includes: li
             logger.info("Cloning all branches of %s", repo_name)
             repo = Repo.clone_from(repo_url_with_token, f"{group_name}/{repo_name}", multi_options=['--mirror'], no_single_branch=True)
             group_info[repo_name] = {"url": repo_url, "path": f"{group_name}/{repo_name}"}
-        except GitCommandError as e:
-            logger.error("Failed to clone %s", repo_name, e)
+        except GitCommandError:
+            logger.exception("Failed to clone %s", repo_name)
 
     download_subgroups(api_url, token, group_name, group_info, includes, excludes)
 
@@ -294,7 +294,7 @@ def create_and_upload_to_new_instance(api_url: str, token: str, repo_info: dict,
                 branch.set_tracking_branch(repo.remotes[new_remote_name].refs[branch.name])
                 logger.info("Branch %s set to track %s/%s", branch.name, new_remote_name, branch.name)
             except IndexError:
-                logger.warn("Remote branch %s/%s does not exist.", new_remote_name, branch.name)
+                logger.exception("Remote branch %s/%s does not exist.", new_remote_name, branch.name)
 
         # Push all branches and tags to the new remote
         try:
@@ -302,11 +302,11 @@ def create_and_upload_to_new_instance(api_url: str, token: str, repo_info: dict,
             repo.git.push(new_remote_name, '--all')
             repo.git.push(new_remote_name, '--tags')
             logger.info("Successfully pushed all branches and tags of %s", repo_name)
-        except GitCommandError as e:
-            logger.error("Failed to push repository %s", repo_name, e)
-
-        # Delete new remote
-        repo.delete_remote(new_remote_name)
+        except GitCommandError:
+            logger.exception("Failed to push all branches and tags of %s", repo_name)
+        finally:
+            # Delete new remote
+            repo.delete_remote(new_remote_name)
 
 def find_git_repos(path: str, repo_info: dict):
     """
